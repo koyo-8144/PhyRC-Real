@@ -20,11 +20,11 @@ class StretchController:
 
         # Subscribers
         rospy.Subscriber('/joint_states', JointState, self.joint_states_callback)
-        rospy.Subscriber('/camera/color/camera_info', CameraInfo, self.color_camera_info_callback)
-        rospy.Subscriber('/camera/color/image_raw', Image, self.color_image_callback)
-        rospy.Subscriber('/camera/depth/camera_info', CameraInfo, self.depth_camera_info_callback)
-        rospy.Subscriber('/camera/depth/image_raw', Image, self.depth_image_callback)
-        rospy.Subscriber('/camera/depth/color/points', PointCloud2, self.depth_point_cloud_callback)
+        # rospy.Subscriber('/camera/color/camera_info', CameraInfo, self.color_camera_info_callback)
+        # rospy.Subscriber('/camera/color/image_raw', Image, self.color_image_callback)
+        # rospy.Subscriber('/camera/depth/camera_info', CameraInfo, self.depth_camera_info_callback)
+        # rospy.Subscriber('/camera/depth/image_raw', Image, self.depth_image_callback)
+        # rospy.Subscriber('/camera/depth/color/points', PointCloud2, self.depth_point_cloud_callback)
 
         # Publishers
         self.arm_command_pub = rospy.Publisher('/stretch_arm_controller/command', JointTrajectory, queue_size=10)
@@ -34,20 +34,20 @@ class StretchController:
         self.point_cloud_pub = rospy.Publisher('/processed_depth_points', PointCloud2, queue_size=1)
 
 
-         # Initialize Open3D visualizer
-        self.vis = o3d.visualization.Visualizer()
-        self.vis.create_window("Depth Point Cloud")
+        # # Initialize Open3D visualizer
+        # self.vis = o3d.visualization.Visualizer()
+        # self.vis.create_window("Depth Point Cloud")
         
-        # Initialize empty point cloud
-        self.pcd = o3d.geometry.PointCloud()
-        self.vis.add_geometry(self.pcd)
+        # # Initialize empty point cloud
+        # self.pcd = o3d.geometry.PointCloud()
+        # self.vis.add_geometry(self.pcd)
 
-        # Add a coordinate frame to help with orientation
-        self.coordinate_frame = o3d.geometry.TriangleMesh.create_coordinate_frame(size=0.3, origin=[0, 0, 0])
-        self.vis.add_geometry(self.coordinate_frame)
+        # # Add a coordinate frame to help with orientation
+        # self.coordinate_frame = o3d.geometry.TriangleMesh.create_coordinate_frame(size=0.3, origin=[0, 0, 0])
+        # self.vis.add_geometry(self.coordinate_frame)
 
-        # Set the camera parameters
-        self.reset_view()
+        # # Set the camera parameters
+        # self.reset_view()
 
 
     ##### joint info #####
@@ -224,18 +224,18 @@ class StretchController:
 
         while not rospy.is_shutdown():
             # Continuously send commands
-            self.send_head_command(pan=0.0, tilt=-0.5)
+            self.send_head_command(pan=-1.5, tilt=-0.7)
             self.send_arm_command({
-                "joint_arm_l0": 0.5,
-                "joint_arm_l1": 0.5,
-                "joint_arm_l2": 0.5,
-                "joint_arm_l3": 0.5,
+                "joint_arm_l0": 0.0,
+                "joint_arm_l1": 0.0,
+                "joint_arm_l2": 0.0,
+                "joint_arm_l3": 0.0,
                 # "joint_left_wheel": 0.5,
-                "joint_lift": 0.5,
-                "joint_wrist_yaw": 1.0
+                "joint_lift": 0.7,
+                "joint_wrist_yaw": 0.0
             })
-            self.send_gripper_command(open=True)
-            self.send_base_command(linear_x=0.5, angular_z=0.0)
+            # self.send_gripper_command(open=True)
+            # self.send_base_command(linear_x=0.5, angular_z=0.0)
 
             # Sleep to maintain the loop rate
             rate.sleep()
