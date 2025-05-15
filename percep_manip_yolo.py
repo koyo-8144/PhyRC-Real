@@ -24,6 +24,7 @@ class StretchController:
         self.tf_broadcaster = tf.TransformBroadcaster()
         self.listener = tf.TransformListener()
         self.intrinsics = None  # Store camera intrinsics here
+        self.rate = rospy.Rate(0.01)  # 1 Hz (1 message per second)
 
         self.yolo_model = YOLO("yolov8n.pt")  # Use a small model for fast inference
 
@@ -44,7 +45,6 @@ class StretchController:
 
         # Depth image buffer
         self.depth_image = None
-        self.move_x = False
 
          # Initialize Open3D visualizer
         # self.vis = o3d.visualization.Visualizer()
@@ -60,6 +60,10 @@ class StretchController:
 
         # # Set the camera parameters
         # self.reset_view()
+
+        self.move_x = False
+        self.y_done = False
+        self.y_threshold = 0.5
 
     
 
@@ -253,6 +257,61 @@ class StretchController:
                                 else:
                                     print("Δy: ", delta_y)
 
+                                    if not self.y_done:
+                                        for i in range(10):
+                                            print(f"-----1st l0 {i+1}-----")
+                                            self.send_arm_command({
+                                                "joint_arm_l0": 0.5,
+                                            })
+                                            # self.rate.sleep()
+
+                                        _, delta_y, _ = self.compare_translation(T_base_human, T_base_ee)
+                                        print("Δy: ", delta_y)
+                                        if abs(delta_y) < self.y_threshold:
+                                            print("Y is close enough")
+                                            self.y_done = True
+
+                                        for i in range(10):
+                                            print(f"-----2nd l0 {i+1}-----")
+                                            self.send_arm_command({
+                                                "joint_arm_l0": 1.0,
+                                            })
+                                            # self.rate.sleep()
+
+                                        _, delta_y, _ = self.compare_translation(T_base_human, T_base_ee)
+                                        print("Δy: ", delta_y)
+                                        if abs(delta_y) < self.y_threshold:
+                                            print("Y is close enough")
+                                            self.y_done = True
+                                        
+                                        for i in range(10):
+                                            print(f"-----3rd l0 {i+1}-----")
+                                            self.send_arm_command({
+                                                "joint_arm_l0": 1.5,
+                                            })
+                                            # self.rate.sleep()
+
+                                        _, delta_y, _ = self.compare_translation(T_base_human, T_base_ee)
+                                        print("Δy: ", delta_y)
+                                        if abs(delta_y) < self.y_threshold:
+                                            print("Y is close enough")
+                                            self.y_done = True
+                                        
+                                        for i in range(10):
+                                            print(f"-----4th l0 {i+1}-----")
+                                            self.send_arm_command({
+                                                "joint_arm_l0": 2.0,
+                                            })
+                                            # self.rate.sleep()
+
+                                        _, delta_y, _ = self.compare_translation(T_base_human, T_base_ee)
+                                        print("Δy: ", delta_y)
+                                        if abs(delta_y) < self.y_threshold:
+                                            print("Y is close enough")
+                                            self.y_done = True
+                                        
+                                        
+
             # Display the processed image
             cv2.imshow("YOLO Detection", cv_image)
             cv2.waitKey(1)
@@ -366,25 +425,25 @@ class StretchController:
 
     def run(self):
         # Set the ROS loop rate
-        rate = rospy.Rate(1)  # 1 Hz (1 message per second)
+        # rate = rospy.Rate(1)  # 1 Hz (1 message per second)
 
-        while not rospy.is_shutdown():
-            # Continuously send commands
-            self.send_head_command(pan=-1.5, tilt=-0.7)
-            self.send_arm_command({
-                "joint_arm_l0": 0.0,
-                "joint_arm_l1": 0.0,
-                "joint_arm_l2": 0.0,
-                "joint_arm_l3": 0.0,
-                # "joint_left_wheel": 0.5,
-                "joint_lift": 0.5,
-                "joint_wrist_yaw": -0.0
-            })
-            self.send_gripper_command(open=True)
-            # self.send_base_command(linear_x=0.5, angular_z=0.0)
+        # while not rospy.is_shutdown():
+        #     # Continuously send commands
+        #     self.send_head_command(pan=-1.5, tilt=-0.7)
+        #     self.send_arm_command({
+        #         "joint_arm_l0": 0.0,
+        #         "joint_arm_l1": 0.0,
+        #         "joint_arm_l2": 0.0,
+        #         "joint_arm_l3": 0.0,
+        #         # "joint_left_wheel": 0.5,
+        #         "joint_lift": 0.5,
+        #         "joint_wrist_yaw": -0.0
+        #     })
+        #     self.send_gripper_command(open=True)
+        #     # self.send_base_command(linear_x=0.5, angular_z=0.0)
 
-            # Sleep to maintain the loop rate
-            rate.sleep()
+        #     # Sleep to maintain the loop rate
+        #     rate.sleep()
 
         # for i in range(3):
         #     print(f"--------------- {i} ---------------")
