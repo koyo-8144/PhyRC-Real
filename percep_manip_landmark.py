@@ -162,7 +162,7 @@ class StretchController:
 
         # Extract the camera intrinsic matrix
         self.intrinsics = np.array(data.K).reshape(3, 3)
-        print("Camera Intrinsics:", self.intrinsics)
+        # print("Camera Intrinsics:", self.intrinsics)
 
     def depth_camera_info_callback(self, data):
         print("=== Depth Camera Info ===")
@@ -234,16 +234,16 @@ class StretchController:
                     if depth_value == 0:
                         print("Invalid depth at this point")
                         return
-                    print(f"Left Wrist Depth (m): {depth_value}")
+                    # print(f"Left Wrist Depth (m): {depth_value}")
 
                     # Get 3D coordinates
                     if depth_value > 0:
                         world_coords = self.pixel_to_world(pixel_x, pixel_y, depth_value)
-                        print(f"Left Wrist World Coordinates (m): {world_coords}")
+                        # print(f"Left Wrist World Coordinates (m): {world_coords}")
                 
                 T = self.get_translation_matrix(world_coords[0], world_coords[1], world_coords[2])
-                print("Translation Matrix (Camera to Wrist):")
-                print(T)
+                # print("Translation Matrix (Camera to Wrist):")
+                # print(T)
 
                 self.broadcast_tf(T, "camera_color_optical_frame", "left_wrist")
 
@@ -268,7 +268,7 @@ class StretchController:
             # Convert to meters if it's in millimeters
             if depth_image.dtype == np.uint16:
                 self.depth_image = depth_image.astype(np.float32) / 1000.0  # Convert mm to meters
-                print("Convert mm to meters")
+                # print("Convert mm to meters")
             else:
                 self.depth_image = depth_image.astype(np.float32)  # Already in meters
         except Exception as e:
@@ -323,7 +323,7 @@ class StretchController:
 
         while not rospy.is_shutdown():
             # Continuously send commands
-            self.send_head_command(pan=-1.5, tilt=-0.5)
+            self.send_head_command(pan=-1.5, tilt=-0.7)
             self.send_arm_command({
                 "joint_arm_l0": 0.0,
                 "joint_arm_l1": 0.0,
