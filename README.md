@@ -9,35 +9,16 @@ To upload the world next time you launch gazebo, you can specify the saved world
 
 Launch Simulation with a World
 ```bash
-roslaunch stretch_navigation mapping_gazebo.launch gazebo_world:=worlds/willowgarage.world'''
+roslaunch stretch_navigation mapping_gazebo.launch gazebo_world:=worlds/willowgarage.world
 
 Creating the map in simulation:
 To launch the simulation with an environment:
 ```bash
-roslaunch stretch_navigation mapping_gazebo.launch gazebo_world:=worlds/willowgarage.world'''
+roslaunch stretch_navigation mapping_gazebo.launch gazebo_world:=worlds/willowgarage.world
 
 
 Drive the robot around following instructions in stretch_navigation to have a simple map:
-```bashroslaunch stretch_core teleop_twist.launch twist_topic:=/stretch_diff_drive_controller/cmd_vel linear:=1.0 angular:=2.0 teleop_type:=keyboard # or use teleop_type:=joystick if you have a controller'''
-
-
-Save map:
 ```bash
-mkdir -p ~/stretch_user/maps
-rosrun map_server map_saver -f ${HELLO_FLEET_PATH}/maps/<map_name>'''
+roslaunch stretch_core teleop_twist.launch twist_topic:=/stretch_diff_drive_controller/cmd_vel linear:=1.0 angular:=2.0 teleop_type:=keyboard # or use teleop_type:=joystick if you have a controller
 
-After having the map, run:
-```bash
-roslaunch stretch_navigation navigation_gazebo.launch gazebo_world:=worlds/willowgarage.world map_yaml:=$(rospack find stretch_navigation)/maps/<map_name>'''
 
-get_pose.py will return current position(x, y, yaw), In rviz, using "2D Pose Estimate" to the position and rotation specified, send_goals.py will return the next position. 
-```bash
-rosrun stretch_navigation get_pose.py'''
-
-We can update send_goals.py with the position from get_pose.py. Before running send_goals.py, restart the gazebo, as Rviz and gazebo will not map using "2D Pose Estimate" as discussed.
-```bash
-rosrun stretch_navigation send_goals.py'''
-
-send_goals_nodes.py has one more section of publishers and subscribers for manipulation
-```bash
-stretch_navigation send_goals_nodes.py'''
