@@ -13,7 +13,7 @@ WAYPOINTS_1 = [
 ]
 
 WAYPOINTS_2 = [
-    (-2.06, -0.21, 15.2),
+    # (-2.06, -0.21, 15.2),
     (-1.34, 1.09, 94.0),
     (-1.26, 2.45, 141.8),
 ]
@@ -73,69 +73,10 @@ class StretchNavigator:
             self.client.cancel_goal()
             return False
 
-    def run(self):
-        for idx, (x, y, yaw) in enumerate(WAYPOINTS_1):
-            rospy.loginfo(f"\n=== Waypoint {idx+1}/{len(WAYPOINTS_1)} ===")
-            # Navigate to the waypoint
-            self.navigate_to(x, y, yaw)
-
-        # Send manip_start signal
-        rospy.loginfo("Sending manip_start signal...")
-        self.manip_done_flag = False
-        # self.manip_start_pub.publish(Bool(data=True))
-        # Publish the manip_start signal for a fixed duration
-        publish_duration = rospy.Duration(5)  # 3 seconds
-        start_time = rospy.Time.now()
-        while rospy.Time.now() - start_time < publish_duration and not rospy.is_shutdown():
-            self.manip_start_pub.publish(Bool(data=True))
-            rospy.sleep(0.1) 
-
-        # Wait for the manip_done signal
-        # timeout_time = rospy.Time.now() + rospy.Duration(30)  # Max wait time
-        # while not self.manip_done_flag and rospy.Time.now() < timeout_time and not rospy.is_shutdown():
-        while not self.manip_done_flag and not rospy.is_shutdown():
-            rospy.loginfo("Waiting for manip_done signal...")
-            rospy.sleep(0.1)
-
-        if self.manip_done_flag:
-            rospy.loginfo("Received manip_done signal. Moving to next waypoint.")
-        
-        rospy.loginfo("\nAll waypoints processed. Mission complete!")
-
-
-
-        for idx, (x, y, yaw) in enumerate(WAYPOINTS_2):
-            rospy.loginfo(f"\n=== Waypoint {idx+1}/{len(WAYPOINTS_2)} ===")
-            # Navigate to the waypoint
-            self.navigate_to(x, y, yaw)
-
-        # Send manip_start signal
-        rospy.loginfo("Sending manip_start signal...")
-        self.manip_done_flag = False
-        # self.manip_start_pub.publish(Bool(data=True))
-        # Publish the manip_start signal for a fixed duration
-        publish_duration = rospy.Duration(5)  # 3 seconds
-        start_time = rospy.Time.now()
-        while rospy.Time.now() - start_time < publish_duration and not rospy.is_shutdown():
-            self.manip_start_pub.publish(Bool(data=True))
-            rospy.sleep(0.1) 
-
-        # Wait for the manip_done signal
-        # timeout_time = rospy.Time.now() + rospy.Duration(30)  # Max wait time
-        # while not self.manip_done_flag and rospy.Time.now() < timeout_time and not rospy.is_shutdown():
-        while not self.manip_done_flag and not rospy.is_shutdown():
-            rospy.loginfo("Waiting for manip_done signal...")
-            rospy.sleep(0.1)
-
-        if self.manip_done_flag:
-            rospy.loginfo("Received manip_done signal. Moving to next waypoint.")
-        
-        rospy.loginfo("\nAll waypoints processed. Mission complete!")
-
 
     def run(self):
-        for waypoints in [WAYPOINTS_1, WAYPOINTS_2]:
-        # for waypoints in [WAYPOINTS_2]:
+        # for waypoints in [WAYPOINTS_1, WAYPOINTS_2]:
+        for waypoints in [WAYPOINTS_2]:
             for idx, (x, y, yaw) in enumerate(waypoints):
                 rospy.loginfo(f"\n=== Waypoint {idx+1}/{len(waypoints)} ===")
                 # Navigate to the waypoint
