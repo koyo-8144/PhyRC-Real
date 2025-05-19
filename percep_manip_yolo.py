@@ -24,9 +24,18 @@ class StretchController:
         self.tf_broadcaster = tf.TransformBroadcaster()
         self.listener = tf.TransformListener()
         self.intrinsics = None  # Store camera intrinsics here
-        self.rate = rospy.Rate(0.01)  # 1 Hz (1 message per second)
+        self.rate = rospy.Rate(0.1)  # 1 Hz (1 message per second)
 
         self.yolo_model = YOLO("yolov8n.pt")  # Use a small model for fast inference
+
+        # Publishers
+        self.arm_command_pub = rospy.Publisher('/stretch_arm_controller/command', JointTrajectory, queue_size=10)
+        self.base_command_pub = rospy.Publisher('/stretch_diff_drive_controller/cmd_vel', Twist, queue_size=10)
+        self.gripper_command_pub = rospy.Publisher('/stretch_gripper_controller/command', JointTrajectory, queue_size=10)
+        self.head_command_pub = rospy.Publisher('/stretch_head_controller/command', JointTrajectory, queue_size=10)
+        self.point_cloud_pub = rospy.Publisher('/processed_depth_points', PointCloud2, queue_size=1)
+
+        # self.init_position()
 
         # Subscribers
         rospy.Subscriber('/joint_states', JointState, self.joint_states_callback)
@@ -35,13 +44,6 @@ class StretchController:
         # rospy.Subscriber('/camera/depth/camera_info', CameraInfo, self.depth_camera_info_callback)
         rospy.Subscriber('/camera/depth/image_raw', Image, self.depth_image_callback)
         # rospy.Subscriber('/camera/depth/color/points', PointCloud2, self.depth_point_cloud_callback)
-
-        # Publishers
-        self.arm_command_pub = rospy.Publisher('/stretch_arm_controller/command', JointTrajectory, queue_size=10)
-        self.base_command_pub = rospy.Publisher('/stretch_diff_drive_controller/cmd_vel', Twist, queue_size=10)
-        self.gripper_command_pub = rospy.Publisher('/stretch_gripper_controller/command', JointTrajectory, queue_size=10)
-        self.head_command_pub = rospy.Publisher('/stretch_head_controller/command', JointTrajectory, queue_size=10)
-        self.point_cloud_pub = rospy.Publisher('/processed_depth_points', PointCloud2, queue_size=1)
 
         # Depth image buffer
         self.depth_image = None
@@ -62,9 +64,13 @@ class StretchController:
         # self.reset_view()
 
         self.move_x = False
-        self.y_done = False
+        self.y_done_1 = False
+        self.z_done_1 = False
+        self.y_done_2 = False
+        self.z_done_2 = False
+        self.done_1 = False
+        self.done_2 = False
         self.y_threshold = 0.2
-        self.z_done = False
         self.z_threshold = 0.1
         self.filtered_delta_y = 0.5
         self.filtered_delta_z = 0.5
@@ -73,7 +79,6 @@ class StretchController:
 
 
         self.current_joint_lift = 0.5
-
 
 
     ##### joint info #####
@@ -92,6 +97,23 @@ class StretchController:
         self.current_joint_lift = position[9]
 
     ##### control #####
+    def init_position(self):
+        print("Initialising position")
+        for _ in range(50):
+            self.send_head_command(pan=-1.5, tilt=-0.7)
+            self.send_arm_command({
+                "joint_arm_l0": 0.0,
+                "joint_arm_l1": 0.0,
+                "joint_arm_l2": 0.0,
+                "joint_arm_l3": 0.0,
+                # "joint_left_wheel": 0.5,
+                "joint_lift": 0.7,
+                "joint_wrist_yaw": 0.0
+            })
+
+            self.rate.sleep()
+
+
     def send_arm_command(self, joint_positions, duration=2.0):
         # Create a JointTrajectory message
         traj_msg = JointTrajectory()
@@ -217,6 +239,376 @@ class StretchController:
 
         self.point_cloud_pub.publish(data)
 
+    # def color_image_callback(self, data):
+    #     try:
+    #         # Convert ROS Image message to OpenCV image
+    #         cv_image = self.bridge.imgmsg_to_cv2(data, desired_encoding='bgr8')
+            
+    #         # Run YOLOv8 inference
+    #         results = self.yolo_model(cv_image)
+
+    #         # Iterate over detected objects
+    #         for result in results:  # Each frame has its own result
+    #             for box in result.boxes:  # Get bounding boxes
+    #                 x1, y1, x2, y2 = map(int, box.xyxy[0].tolist())
+    #                 conf = box.conf[0].item()
+    #                 cls = int(box.cls[0].item())
+                    
+    #                 # Check if the detected object is a person (class 0)
+    #                 if cls == 0:
+    #                     # Draw the bounding box
+    #                     cv2.rectangle(cv_image, (x1, y1), (x2, y2), (0, 255, 0), 2)
+    #                     cv2.putText(cv_image, f"Person {conf:.2f}", (x1, y1 - 10), cv2.FONT_HERSHEY_SIMPLEX, 0.5, (0, 255, 0), 2)
+
+    #                     # Get the center of the bounding box
+    #                     center_x = int((x1 + x2) / 2)
+    #                     center_y = int((y1 + y2) / 2)
+
+    #                     # Get the depth value
+    #                     if self.depth_image is not None:
+    #                         depth_value = self.depth_image[center_y, center_x]
+    #                         if depth_value == 0:
+    #                             print("Invalid depth at this point")
+    #                             continue
+
+    #                         # Convert to world coordinates
+    #                         if depth_value > 0:
+    #                             world_coords = self.pixel_to_world(center_x, center_y, depth_value)
+    #                             # print(f"Human World Coordinates (m): {world_coords}")
+
+    #                             # Broadcast the transform
+    #                             T_camera_human = self.get_translation_matrix(world_coords[0], world_coords[1], world_coords[2])
+    #                             self.broadcast_tf(T_camera_human, "camera_color_optical_frame", "detected_human")
+
+    #                             T_base_human = self.listen_parent_to_child("base_link", "detected_human")
+    #                             T_base_ee = self.listen_parent_to_child("base_link", "link_grasp_center")
+
+    #                             delta_x, delta_y, delta_z = self.compare_translation(T_base_human, T_base_ee)
+    #                             self.filtered_delta_y = self.apply_low_pass_filter(delta_y, self.filtered_delta_y, self.y_smoothing_factor)
+    #                             self.filtered_delta_z = self.apply_low_pass_filter(delta_z, self.filtered_delta_z, self.z_smoothing_factor)
+
+    #                             if self.move_x:
+    #                                 print("Δx: ", delta_x)
+    #                             else:
+    #                                 print("Δy (filtered): ", self.filtered_delta_y)
+    #                                 self.send_head_command(pan=-1.5, tilt=-0.7)
+
+    #                                 #### l0 ####
+    #                                 if not self.y_done_1:
+    #                                     for i in range(10):
+    #                                         print(f"-----1st l0 {i+1}-----")
+    #                                         self.send_arm_command({
+    #                                             "joint_arm_l0": 0.5,
+    #                                             "joint_lift": 0.5,
+    #                                             "joint_wrist_yaw": -0.0
+    #                                         })
+    #                                         # self.rate.sleep()
+
+    #                                     _, delta_y, _ = self.compare_translation(T_base_human, T_base_ee)
+    #                                     print("Δy (filtered): ", self.filtered_delta_y)
+    #                                     if abs(self.filtered_delta_y) < self.y_threshold:
+    #                                         print("Y is close enough")
+    #                                         self.y_done_1 = True
+
+    #                                     if not self.y_done_1:
+    #                                         for i in range(10):
+    #                                             print(f"-----2nd l0 {i+1}-----")
+    #                                             self.send_arm_command({
+    #                                                 "joint_arm_l0": 1.0,
+    #                                                 "joint_lift": 0.5,
+    #                                                 "joint_wrist_yaw": -0.0
+    #                                             })
+    #                                             # self.rate.sleep()
+
+    #                                         _, delta_y, _ = self.compare_translation(T_base_human, T_base_ee)
+    #                                         print("Δy (filtered): ", self.filtered_delta_y)
+    #                                         if abs(self.filtered_delta_y) < self.y_threshold:
+    #                                             print("Y is close enough")
+    #                                             self.y_done_1 = True
+
+    #                                         if not self.y_done_1:
+    #                                             for i in range(10):
+    #                                                 print(f"-----3rd l0 {i+1}-----")
+    #                                                 self.send_arm_command({
+    #                                                     "joint_arm_l0": 1.5,
+    #                                                     "joint_lift": 0.5,
+    #                                                     "joint_wrist_yaw": -0.0
+    #                                                 })
+    #                                                 # self.rate.sleep()
+
+    #                                             _, delta_y, _ = self.compare_translation(T_base_human, T_base_ee)
+    #                                             print("Δy (filtered): ", self.filtered_delta_y)
+    #                                             if abs(self.filtered_delta_y) < self.y_threshold:
+    #                                                 print("Y is close enough")
+    #                                                 self.y_done_1 = True
+                                        
+    #                                             if not self.y_done_1:
+    #                                                 for i in range(10):
+    #                                                     print(f"-----4th l0 {i+1}-----")
+    #                                                     self.send_arm_command({
+    #                                                         "joint_arm_l0": 2.0,
+    #                                                     })
+    #                                                     # self.rate.sleep()
+
+    #                                                 _, delta_y, _ = self.compare_translation(T_base_human, T_base_ee)
+    #                                                 print("Δy (filtered): ", self.filtered_delta_y)
+    #                                                 if abs(self.filtered_delta_y) < self.y_threshold:
+    #                                                     print("Y is close enough")
+    #                                                     self.y_done_1 = True
+                                        
+    #                                                 #### l1 ####
+    #                                                 if not self.y_done_1:
+    #                                                     for i in range(10):
+    #                                                         print(f"-----1st l1 {i+1}-----")
+    #                                                         self.send_arm_command({
+    #                                                             "joint_arm_l1": 0.5,
+    #                                                             "joint_lift": 0.5,
+    #                                                             "joint_wrist_yaw": -0.0
+    #                                                         })
+    #                                                         # self.rate.sleep()
+
+    #                                                     _, delta_y, _ = self.compare_translation(T_base_human, T_base_ee)
+    #                                                     print("Δy (filtered): ", self.filtered_delta_y)
+    #                                                     if abs(self.filtered_delta_y) < self.y_threshold:
+    #                                                         print("Y is close enough")
+    #                                                         self.y_done_1 = True
+                                        
+    #                                                     if not self.y_done_1:
+    #                                                         for i in range(10):
+    #                                                             print(f"-----2nd l1 {i+1}-----")
+    #                                                             self.send_arm_command({
+    #                                                                 "joint_arm_l1": 1.0,
+    #                                                                 "joint_lift": 0.5,
+    #                                                                 "joint_wrist_yaw": -0.0
+    #                                                             })
+    #                                                             # self.rate.sleep()
+
+    #                                                         _, delta_y, _ = self.compare_translation(T_base_human, T_base_ee)
+    #                                                         print("Δy (filtered): ", self.filtered_delta_y)
+    #                                                         if abs(self.filtered_delta_y) < self.y_threshold:
+    #                                                             print("Y is close enough")
+    #                                                             self.y_done_1 = True
+                                        
+    #                                                         if not self.y_done_1:
+    #                                                             for i in range(10):
+    #                                                                 print(f"-----3rd l1 {i+1}-----")
+    #                                                                 self.send_arm_command({
+    #                                                                     "joint_arm_l1": 1.5,
+    #                                                                     "joint_lift": 0.5,
+    #                                                                     "joint_wrist_yaw": -0.0
+    #                                                                 })
+    #                                                                 # self.rate.sleep()
+
+    #                                                             _, delta_y, _ = self.compare_translation(T_base_human, T_base_ee)
+    #                                                             print("Δy (filtered): ", self.filtered_delta_y)
+    #                                                             if abs(self.filtered_delta_y) < self.y_threshold:
+    #                                                                 print("Y is close enough")
+    #                                                                 self.y_done_1 = True
+                                        
+    #                                                             if not self.y_done_1:
+    #                                                                 for i in range(10):
+    #                                                                     print(f"-----4th l1 {i+1}-----")
+    #                                                                     self.send_arm_command({
+    #                                                                         "joint_arm_l1": 2.0,
+    #                                                                         "joint_lift": 0.5,
+    #                                                                         "joint_wrist_yaw": -0.0
+    #                                                                     })
+    #                                                                     # self.rate.sleep()
+
+    #                                                                 _, delta_y, _ = self.compare_translation(T_base_human, T_base_ee)
+    #                                                                 print("Δy (filtered): ", self.filtered_delta_y)
+    #                                                                 if abs(self.filtered_delta_y) < self.y_threshold:
+    #                                                                     print("Y is close enough")
+    #                                                                     self.y_done_1 = True
+
+    #                                                                 #### l2 ####
+    #                                                                 if not self.y_done_1:
+    #                                                                     for i in range(10):
+    #                                                                         print(f"-----1st l2 {i+1}-----")
+    #                                                                         self.send_arm_command({
+    #                                                                             "joint_arm_l2": 0.5,
+    #                                                                             "joint_lift": 0.5,
+    #                                                                             "joint_wrist_yaw": -0.0
+    #                                                                         })
+    #                                                                         # self.rate.sleep()
+
+    #                                                                     _, delta_y, _ = self.compare_translation(T_base_human, T_base_ee)
+    #                                                                     print("Δy (filtered): ", self.filtered_delta_y)
+    #                                                                     if abs(self.filtered_delta_y) < self.y_threshold:
+    #                                                                         print("Y is close enough")
+    #                                                                         self.y_done_1 = True
+                                        
+    #                                                                     if not self.y_done_1:
+    #                                                                         for i in range(10):
+    #                                                                             print(f"-----2nd l2 {i+1}-----")
+    #                                                                             self.send_arm_command({
+    #                                                                                 "joint_arm_l2": 1.0,
+    #                                                                                 "joint_lift": 0.5,
+    #                                                                                 "joint_wrist_yaw": -0.0
+    #                                                                             })
+    #                                                                             # self.rate.sleep()
+
+    #                                                                         _, delta_y, _ = self.compare_translation(T_base_human, T_base_ee)
+    #                                                                         print("Δy (filtered): ", self.filtered_delta_y)
+    #                                                                         if abs(self.filtered_delta_y) < self.y_threshold:
+    #                                                                             print("Y is close enough")
+    #                                                                             self.y_done_1 = True
+                                        
+    #                                                                         if not self.y_done_1:
+    #                                                                             for i in range(10):
+    #                                                                                 print(f"-----3rd l2 {i+1}-----")
+    #                                                                                 self.send_arm_command({
+    #                                                                                     "joint_arm_l2": 1.5,
+    #                                                                                     "joint_lift": 0.5,
+    #                                                                                     "joint_wrist_yaw": -0.0
+    #                                                                                 })
+    #                                                                                 # self.rate.sleep()
+
+    #                                                                             _, delta_y, _ = self.compare_translation(T_base_human, T_base_ee)
+    #                                                                             print("Δy (filtered): ", self.filtered_delta_y)
+    #                                                                             if abs(self.filtered_delta_y) < self.y_threshold:
+    #                                                                                 print("Y is close enough")
+    #                                                                                 self.y_done_1 = True
+                                        
+    #                                                                             if not self.y_done_1:
+    #                                                                                 for i in range(10):
+    #                                                                                     print(f"-----4th l2 {i+1}-----")
+    #                                                                                     self.send_arm_command({
+    #                                                                                         "joint_arm_l2": 2.0,
+    #                                                                                         "joint_lift": 0.5,
+    #                                                                                         "joint_wrist_yaw": -0.0
+    #                                                                                     })
+    #                                                                                     # self.rate.sleep()
+
+    #                                                                                 _, delta_y, _ = self.compare_translation(T_base_human, T_base_ee)
+    #                                                                                 print("Δy (filtered): ", self.filtered_delta_y)
+    #                                                                                 if abs(self.filtered_delta_y) < self.y_threshold:
+    #                                                                                     print("Y is close enough")
+    #                                                                                     self.y_done_1 = True
+                                        
+    #                                                                                 #### l3 ####
+    #                                                                                 if not self.y_done_1:
+    #                                                                                     for i in range(10):
+    #                                                                                         print(f"-----1st l3 {i+1}-----")
+    #                                                                                         self.send_arm_command({
+    #                                                                                             "joint_arm_l3": 0.5,
+    #                                                                                         })
+    #                                                                                         # self.rate.sleep()
+
+    #                                                                                     _, delta_y, _ = self.compare_translation(T_base_human, T_base_ee)
+    #                                                                                     print("Δy (filtered): ", self.filtered_delta_y)
+    #                                                                                     if abs(self.filtered_delta_y) < self.y_threshold:
+    #                                                                                         print("Y is close enough")
+    #                                                                                         self.y_done_1 = True
+                                        
+    #                                                                                     if not self.y_done_1:
+    #                                                                                         for i in range(10):
+    #                                                                                             print(f"-----2nd l3 {i+1}-----")
+    #                                                                                             self.send_arm_command({
+    #                                                                                                 "joint_arm_l3": 1.0,
+    #                                                                                             })
+    #                                                                                             # self.rate.sleep()
+
+    #                                                                                         _, delta_y, _ = self.compare_translation(T_base_human, T_base_ee)
+    #                                                                                         print("Δy (filtered): ", self.filtered_delta_y)
+    #                                                                                         if abs(self.filtered_delta_y) < self.y_threshold:
+    #                                                                                             print("Y is close enough")
+    #                                                                                             self.y_done_1 = True
+                                        
+    #                                                                                         if not self.y_done_1:
+    #                                                                                             for i in range(10):
+    #                                                                                                 print(f"-----3rd l3 {i+1}-----")
+    #                                                                                                 self.send_arm_command({
+    #                                                                                                     "joint_arm_l3": 1.5,
+    #                                                                                                 })
+    #                                                                                                 # self.rate.sleep()
+
+    #                                                                                             _, delta_y, _ = self.compare_translation(T_base_human, T_base_ee)
+    #                                                                                             print("Δy (filtered): ", self.filtered_delta_y)
+    #                                                                                             if abs(self.filtered_delta_y) < self.y_threshold:
+    #                                                                                                 print("Y is close enough")
+    #                                                                                                 self.y_done_1 = True
+                                        
+    #                                                                                             if not self.y_done_1:
+    #                                                                                                 for i in range(10):
+    #                                                                                                     print(f"-----4th l3 {i+1}-----")
+    #                                                                                                     self.send_arm_command({
+    #                                                                                                         "joint_arm_l3": 2.0,
+    #                                                                                                     })
+    #                                                                                                     # self.rate.sleep()
+
+    #                                                                                                 _, delta_y, _ = self.compare_translation(T_base_human, T_base_ee)
+    #                                                                                                 print("Δy (filtered): ", self.filtered_delta_y)
+    #                                                                                                 if abs(self.filtered_delta_y) < self.y_threshold:
+    #                                                                                                     print("Y is close enough")
+    #                                                                                                     self.y_done_1 = True
+                                    
+    #                                 else:
+    #                                     print("Y is close enough")
+                                        
+    #                                     print("Δz (filtered): ", self.filtered_delta_z)
+
+    #                                     for i in range(30):
+    #                                         print("Current lift: ", self.current_joint_lift)
+    #                                         self.send_arm_command({
+    #                                             "joint_lift": 0.48,
+    #                                         })
+
+    #                                     # if not self.z_done_1:
+    #                                     #     for i in range(10):
+    #                                     #         print(f"-----1st lift down {i+1}-----")
+    #                                     #         self.send_arm_command({
+    #                                     #             "joint_lift": 0.4,
+    #                                     #         })
+    #                                     #         # self.rate.sleep()
+
+    #                                     #     _, _, delta_z = self.compare_translation(T_base_human, T_base_ee)
+    #                                     #     print("Δz (filtered): ", self.filtered_delta_z)
+    #                                     #     if abs(self.filtered_delta_z) < self.z_threshold:
+    #                                     #         print("Z is close enough")
+    #                                     #         self.z_done_1 = True
+                                            
+    #                                     #     for i in range(10):
+    #                                     #         print(f"-----2nd lift down {i+1}-----")
+    #                                     #         self.send_arm_command({
+    #                                     #             "joint_lift": 0.3,
+    #                                     #         })
+    #                                     #         # self.rate.sleep()
+
+    #                                     #     _, _, delta_z = self.compare_translation(T_base_human, T_base_ee)
+    #                                     #     print("Δz (filtered): ", self.filtered_delta_z)
+    #                                     #     if abs(self.filtered_delta_z) < self.z_threshold:
+    #                                     #         print("Z is close enough")
+    #                                     #         self.z_done_1 = True
+                                            
+    #                                     #     for i in range(10):
+    #                                     #         print(f"-----3rd lift down {i+1}-----")
+    #                                     #         self.send_arm_command({
+    #                                     #             "joint_lift": 0.2,
+    #                                     #         })
+    #                                     #         # self.rate.sleep()
+
+    #                                     #     _, _, delta_z = self.compare_translation(T_base_human, T_base_ee)
+    #                                     #     print("Δz (filtered): ", self.filtered_delta_z)
+    #                                     #     if abs(self.filtered_delta_z) < self.z_threshold:
+    #                                     #         print("Z is close enough")
+    #                                     #         self.z_done_1 = True
+                                        
+    #                                     # else:
+    #                                     #     print("Z is close enough")
+    #                                     #     for i in range(20):
+    #                                     #         self.send_arm_command({
+    #                                     #             "joint_lift": self.current_joint_lift,
+    #                                     #         })
+
+
+    #         # Display the processed image
+    #         cv2.imshow("YOLO Detection", cv_image)
+    #         cv2.waitKey(1)
+
+    #     except Exception as e:
+    #         rospy.logerr(f"Failed to process color image: {e}")
+
     def color_image_callback(self, data):
         try:
             # Convert ROS Image message to OpenCV image
@@ -225,344 +617,46 @@ class StretchController:
             # Run YOLOv8 inference
             results = self.yolo_model(cv_image)
 
-            # Iterate over detected objects
-            for result in results:  # Each frame has its own result
-                for box in result.boxes:  # Get bounding boxes
-                    x1, y1, x2, y2 = map(int, box.xyxy[0].tolist())
-                    conf = box.conf[0].item()
+            # Process only the first detected person (more efficient)
+            for result in results:
+                for box in result.boxes:
                     cls = int(box.cls[0].item())
-                    
-                    # Check if the detected object is a person (class 0)
-                    if cls == 0:
+                    if cls == 0:  # Person class
+                        # Extract bounding box
+                        x1, y1, x2, y2 = map(int, box.xyxy[0].tolist())
+                        center_x, center_y = (x1 + x2) // 2, (y1 + y2) // 2
+
+                        # Get depth
+                        if self.depth_image is None:
+                            continue
+                        
+                        depth_value = self.depth_image[center_y, center_x]
+                        if depth_value <= 0:
+                            print("Invalid depth at this point")
+                            continue
+
+                        # Convert to world coordinates
+                        world_coords = self.pixel_to_world(center_x, center_y, depth_value)
+                        T_camera_human = self.get_translation_matrix(*world_coords)
+                        self.broadcast_tf(T_camera_human, "camera_color_optical_frame", "detected_human")
+
+                        T_base_human = self.listen_parent_to_child("base_link", "detected_human")
+                        T_base_ee = self.listen_parent_to_child("base_link", "link_grasp_center")
+
+                        delta_x, delta_y, delta_z = self.compare_translation(T_base_human, T_base_ee)
+
+                        # Apply low-pass filtering
+                        self.filtered_delta_y = self.apply_low_pass_filter(delta_y, self.filtered_delta_y, self.y_smoothing_factor)
+                        self.filtered_delta_z = self.apply_low_pass_filter(delta_z, self.filtered_delta_z, self.z_smoothing_factor)
+
+
                         # Draw the bounding box
+                        conf = box.conf[0].item()
                         cv2.rectangle(cv_image, (x1, y1), (x2, y2), (0, 255, 0), 2)
                         cv2.putText(cv_image, f"Person {conf:.2f}", (x1, y1 - 10), cv2.FONT_HERSHEY_SIMPLEX, 0.5, (0, 255, 0), 2)
 
-                        # Get the center of the bounding box
-                        center_x = int((x1 + x2) / 2)
-                        center_y = int((y1 + y2) / 2)
-
-                        # Get the depth value
-                        if self.depth_image is not None:
-                            depth_value = self.depth_image[center_y, center_x]
-                            if depth_value == 0:
-                                print("Invalid depth at this point")
-                                continue
-
-                            # Convert to world coordinates
-                            if depth_value > 0:
-                                world_coords = self.pixel_to_world(center_x, center_y, depth_value)
-                                # print(f"Human World Coordinates (m): {world_coords}")
-
-                                # Broadcast the transform
-                                T_camera_human = self.get_translation_matrix(world_coords[0], world_coords[1], world_coords[2])
-                                self.broadcast_tf(T_camera_human, "camera_color_optical_frame", "detected_human")
-
-                                T_base_human = self.listen_parent_to_child("base_link", "detected_human")
-                                T_base_ee = self.listen_parent_to_child("base_link", "link_grasp_center")
-
-                                delta_x, delta_y, delta_z = self.compare_translation(T_base_human, T_base_ee)
-                                self.filtered_delta_y = self.apply_low_pass_filter(delta_y, self.filtered_delta_y, self.y_smoothing_factor)
-                                self.filtered_delta_z = self.apply_low_pass_filter(delta_z, self.filtered_delta_z, self.z_smoothing_factor)
-                                if self.move_x:
-                                    print("Δx: ", delta_x)
-                                else:
-                                    print("Δy (filtered): ", self.filtered_delta_y)
-                                    self.send_head_command(pan=-1.5, tilt=-0.7)
-                                    if not self.y_done:
-
-                                        #### l0 ####
-                                        for i in range(10):
-                                            print(f"-----1st l0 {i+1}-----")
-                                            self.send_arm_command({
-                                                "joint_arm_l0": 0.5,
-                                                "joint_lift": 0.5,
-                                                "joint_wrist_yaw": -0.0
-                                            })
-                                            # self.rate.sleep()
-
-                                        _, delta_y, _ = self.compare_translation(T_base_human, T_base_ee)
-                                        print("Δy (filtered): ", self.filtered_delta_y)
-                                        if abs(self.filtered_delta_y) < self.y_threshold:
-                                            print("Y is close enough")
-                                            self.y_done = True
-
-                                        for i in range(10):
-                                            print(f"-----2nd l0 {i+1}-----")
-                                            self.send_arm_command({
-                                                "joint_arm_l0": 1.0,
-                                                "joint_lift": 0.5,
-                                                "joint_wrist_yaw": -0.0
-                                            })
-                                            # self.rate.sleep()
-
-                                        _, delta_y, _ = self.compare_translation(T_base_human, T_base_ee)
-                                        print("Δy (filtered): ", self.filtered_delta_y)
-                                        if abs(self.filtered_delta_y) < self.y_threshold:
-                                            print("Y is close enough")
-                                            self.y_done = True
-                                        
-                                        for i in range(10):
-                                            print(f"-----3rd l0 {i+1}-----")
-                                            self.send_arm_command({
-                                                "joint_arm_l0": 1.5,
-                                                "joint_lift": 0.5,
-                                                "joint_wrist_yaw": -0.0
-                                            })
-                                            # self.rate.sleep()
-
-                                        _, delta_y, _ = self.compare_translation(T_base_human, T_base_ee)
-                                        print("Δy (filtered): ", self.filtered_delta_y)
-                                        if abs(self.filtered_delta_y) < self.y_threshold:
-                                            print("Y is close enough")
-                                            self.y_done = True
-                                        
-                                        for i in range(10):
-                                            print(f"-----4th l0 {i+1}-----")
-                                            self.send_arm_command({
-                                                "joint_arm_l0": 2.0,
-                                            })
-                                            # self.rate.sleep()
-
-                                        _, delta_y, _ = self.compare_translation(T_base_human, T_base_ee)
-                                        print("Δy (filtered): ", self.filtered_delta_y)
-                                        if abs(self.filtered_delta_y) < self.y_threshold:
-                                            print("Y is close enough")
-                                            self.y_done = True
-                                        
-                                        #### l1 ####
-                                        for i in range(10):
-                                            print(f"-----1st l1 {i+1}-----")
-                                            self.send_arm_command({
-                                                "joint_arm_l1": 0.5,
-                                                "joint_lift": 0.5,
-                                                "joint_wrist_yaw": -0.0
-                                            })
-                                            # self.rate.sleep()
-
-                                        _, delta_y, _ = self.compare_translation(T_base_human, T_base_ee)
-                                        print("Δy (filtered): ", self.filtered_delta_y)
-                                        if abs(self.filtered_delta_y) < self.y_threshold:
-                                            print("Y is close enough")
-                                            self.y_done = True
-                                        
-                                        for i in range(10):
-                                            print(f"-----2nd l1 {i+1}-----")
-                                            self.send_arm_command({
-                                                "joint_arm_l1": 1.0,
-                                                "joint_lift": 0.5,
-                                                "joint_wrist_yaw": -0.0
-                                            })
-                                            # self.rate.sleep()
-
-                                        _, delta_y, _ = self.compare_translation(T_base_human, T_base_ee)
-                                        print("Δy (filtered): ", self.filtered_delta_y)
-                                        if abs(self.filtered_delta_y) < self.y_threshold:
-                                            print("Y is close enough")
-                                            self.y_done = True
-                                        
-                                        for i in range(10):
-                                            print(f"-----3rd l1 {i+1}-----")
-                                            self.send_arm_command({
-                                                "joint_arm_l1": 1.5,
-                                                "joint_lift": 0.5,
-                                                "joint_wrist_yaw": -0.0
-                                            })
-                                            # self.rate.sleep()
-
-                                        _, delta_y, _ = self.compare_translation(T_base_human, T_base_ee)
-                                        print("Δy (filtered): ", self.filtered_delta_y)
-                                        if abs(self.filtered_delta_y) < self.y_threshold:
-                                            print("Y is close enough")
-                                            self.y_done = True
-                                        
-                                        for i in range(10):
-                                            print(f"-----4th l1 {i+1}-----")
-                                            self.send_arm_command({
-                                                "joint_arm_l1": 2.0,
-                                                "joint_lift": 0.5,
-                                                "joint_wrist_yaw": -0.0
-                                            })
-                                            # self.rate.sleep()
-
-                                        _, delta_y, _ = self.compare_translation(T_base_human, T_base_ee)
-                                        print("Δy (filtered): ", self.filtered_delta_y)
-                                        if abs(self.filtered_delta_y) < self.y_threshold:
-                                            print("Y is close enough")
-                                            self.y_done = True
-
-                                        #### l2 ####
-                                        for i in range(10):
-                                            print(f"-----1st l2 {i+1}-----")
-                                            self.send_arm_command({
-                                                "joint_arm_l2": 0.5,
-                                                "joint_lift": 0.5,
-                                                "joint_wrist_yaw": -0.0
-                                            })
-                                            # self.rate.sleep()
-
-                                        _, delta_y, _ = self.compare_translation(T_base_human, T_base_ee)
-                                        print("Δy (filtered): ", self.filtered_delta_y)
-                                        if abs(self.filtered_delta_y) < self.y_threshold:
-                                            print("Y is close enough")
-                                            self.y_done = True
-                                        
-                                        for i in range(10):
-                                            print(f"-----2nd l2 {i+1}-----")
-                                            self.send_arm_command({
-                                                "joint_arm_l2": 1.0,
-                                                "joint_lift": 0.5,
-                                                "joint_wrist_yaw": -0.0
-                                            })
-                                            # self.rate.sleep()
-
-                                        _, delta_y, _ = self.compare_translation(T_base_human, T_base_ee)
-                                        print("Δy (filtered): ", self.filtered_delta_y)
-                                        if abs(self.filtered_delta_y) < self.y_threshold:
-                                            print("Y is close enough")
-                                            self.y_done = True
-                                        
-                                        for i in range(10):
-                                            print(f"-----3rd l2 {i+1}-----")
-                                            self.send_arm_command({
-                                                "joint_arm_l2": 1.5,
-                                                "joint_lift": 0.5,
-                                                "joint_wrist_yaw": -0.0
-                                            })
-                                            # self.rate.sleep()
-
-                                        _, delta_y, _ = self.compare_translation(T_base_human, T_base_ee)
-                                        print("Δy (filtered): ", self.filtered_delta_y)
-                                        if abs(self.filtered_delta_y) < self.y_threshold:
-                                            print("Y is close enough")
-                                            self.y_done = True
-                                        
-                                        for i in range(10):
-                                            print(f"-----4th l2 {i+1}-----")
-                                            self.send_arm_command({
-                                                "joint_arm_l2": 2.0,
-                                                "joint_lift": 0.5,
-                                                "joint_wrist_yaw": -0.0
-                                            })
-                                            # self.rate.sleep()
-
-                                        _, delta_y, _ = self.compare_translation(T_base_human, T_base_ee)
-                                        print("Δy (filtered): ", self.filtered_delta_y)
-                                        if abs(self.filtered_delta_y) < self.y_threshold:
-                                            print("Y is close enough")
-                                            self.y_done = True
-                                        
-                                        #### l3 ####
-                                        for i in range(10):
-                                            print(f"-----1st l3 {i+1}-----")
-                                            self.send_arm_command({
-                                                "joint_arm_l3": 0.5,
-                                            })
-                                            # self.rate.sleep()
-
-                                        _, delta_y, _ = self.compare_translation(T_base_human, T_base_ee)
-                                        print("Δy (filtered): ", self.filtered_delta_y)
-                                        if abs(self.filtered_delta_y) < self.y_threshold:
-                                            print("Y is close enough")
-                                            self.y_done = True
-                                        
-                                        for i in range(10):
-                                            print(f"-----2nd l3 {i+1}-----")
-                                            self.send_arm_command({
-                                                "joint_arm_l3": 1.0,
-                                            })
-                                            # self.rate.sleep()
-
-                                        _, delta_y, _ = self.compare_translation(T_base_human, T_base_ee)
-                                        print("Δy (filtered): ", self.filtered_delta_y)
-                                        if abs(self.filtered_delta_y) < self.y_threshold:
-                                            print("Y is close enough")
-                                            self.y_done = True
-                                        
-                                        for i in range(10):
-                                            print(f"-----3rd l3 {i+1}-----")
-                                            self.send_arm_command({
-                                                "joint_arm_l3": 1.5,
-                                            })
-                                            # self.rate.sleep()
-
-                                        _, delta_y, _ = self.compare_translation(T_base_human, T_base_ee)
-                                        print("Δy (filtered): ", self.filtered_delta_y)
-                                        if abs(self.filtered_delta_y) < self.y_threshold:
-                                            print("Y is close enough")
-                                            self.y_done = True
-                                        
-                                        for i in range(10):
-                                            print(f"-----4th l3 {i+1}-----")
-                                            self.send_arm_command({
-                                                "joint_arm_l3": 2.0,
-                                            })
-                                            # self.rate.sleep()
-
-                                        _, delta_y, _ = self.compare_translation(T_base_human, T_base_ee)
-                                        print("Δy (filtered): ", self.filtered_delta_y)
-                                        if abs(self.filtered_delta_y) < self.y_threshold:
-                                            print("Y is close enough")
-                                            self.y_done = True
-                                    
-                                    else:
-                                        print("Y is close enough")
-                                        
-                                        print("Δz (filtered): ", self.filtered_delta_z)
-
-                                        for i in range(30):
-                                            print("Current lift: ", self.current_joint_lift)
-                                            self.send_arm_command({
-                                                "joint_lift": 0.48,
-                                            })
-
-                                        # if not self.z_done:
-                                        #     for i in range(10):
-                                        #         print(f"-----1st lift down {i+1}-----")
-                                        #         self.send_arm_command({
-                                        #             "joint_lift": 0.4,
-                                        #         })
-                                        #         # self.rate.sleep()
-
-                                        #     _, _, delta_z = self.compare_translation(T_base_human, T_base_ee)
-                                        #     print("Δz (filtered): ", self.filtered_delta_z)
-                                        #     if abs(self.filtered_delta_z) < self.z_threshold:
-                                        #         print("Z is close enough")
-                                        #         self.z_done = True
-                                            
-                                        #     for i in range(10):
-                                        #         print(f"-----2nd lift down {i+1}-----")
-                                        #         self.send_arm_command({
-                                        #             "joint_lift": 0.3,
-                                        #         })
-                                        #         # self.rate.sleep()
-
-                                        #     _, _, delta_z = self.compare_translation(T_base_human, T_base_ee)
-                                        #     print("Δz (filtered): ", self.filtered_delta_z)
-                                        #     if abs(self.filtered_delta_z) < self.z_threshold:
-                                        #         print("Z is close enough")
-                                        #         self.z_done = True
-                                            
-                                        #     for i in range(10):
-                                        #         print(f"-----3rd lift down {i+1}-----")
-                                        #         self.send_arm_command({
-                                        #             "joint_lift": 0.2,
-                                        #         })
-                                        #         # self.rate.sleep()
-
-                                        #     _, _, delta_z = self.compare_translation(T_base_human, T_base_ee)
-                                        #     print("Δz (filtered): ", self.filtered_delta_z)
-                                        #     if abs(self.filtered_delta_z) < self.z_threshold:
-                                        #         print("Z is close enough")
-                                        #         self.z_done = True
-                                        
-                                        # else:
-                                        #     print("Z is close enough")
-                                        #     for i in range(20):
-                                        #         self.send_arm_command({
-                                        #             "joint_lift": self.current_joint_lift,
-                                        #         })
-
+                        # Break after first person detection for efficiency
+                        break
 
             # Display the processed image
             cv2.imshow("YOLO Detection", cv_image)
@@ -715,19 +809,135 @@ class StretchController:
         #     # Sleep to maintain the loop rate
         #     rate.sleep()
 
-        # for i in range(3):
-        #     print(f"--------------- {i} ---------------")
-        #     self.send_head_command(pan=0.1, tilt=0.1)
-        #     self.send_arm_command({
-        #         "joint_lift": 0.3,
-        #         "joint_wrist_yaw": 0.5,
-        #         "joint_arm_l0": 0.1
-        #     })
-        #     self.send_gripper_command(open=False)
-        #     self.send_base_command(linear_x=0.5, angular_z=0.0)
 
-        #     # Sleep to maintain the loop rate
-        #     rate.sleep()
+        if not self.done_1:
+            print(f"1st iteraction: current Δy {self.filtered_delta_y} and Δz {self.filtered_delta_z}")
+        elif not self.done_2:
+            print(f"2nd iteraction: current Δy {self.filtered_delta_y} and Δz {self.filtered_delta_z}")
+
+        if not self.y_done_1:
+            # Efficient joint adjustment loop
+            joint_levels = {
+                "joint_arm_l0": [0.5, 1.0, 1.5, 2.0],
+                "joint_arm_l1": [0.5, 1.0, 1.5, 2.0],
+                "joint_arm_l2": [0.5, 1.0, 1.5, 2.0],
+                "joint_arm_l3": [0.5, 1.0, 1.5, 2.0],
+            }
+
+            for joint, levels in joint_levels.items():
+                if self.y_done_1:
+                    break
+                
+                for level in levels:
+                    for _ in range(10):
+                        print(f"Adjusting {joint} to {level}")
+                        self.send_arm_command({
+                            joint: level,
+                            "joint_lift": 0.5,
+                            "joint_wrist_yaw": -0.0
+                        })
+
+                    # Recalculate the filtered delta_y
+                    _, delta_y, _ = self.compare_translation(T_base_human, T_base_ee)
+                    self.filtered_delta_y = self.apply_low_pass_filter(delta_y, self.filtered_delta_y, self.y_smoothing_factor)
+                    print("Δy (filtered): ", self.filtered_delta_y)
+
+                    if abs(self.filtered_delta_y) < self.y_threshold:
+                        print("Y is close enough")
+                        self.y_done_1 = True
+                        break
+
+        # Handle Z movement after Y is done
+        if self.y_done_1 and not self.z_done_1:
+
+            for level in [0.4, 0.3, 0.2]:
+                for _ in range(10):
+                    print(f"Adjusting joint_lift to {level}")
+                    self.send_arm_command({"joint_lift": level})
+
+                # Recalculate the filtered delta_z
+                _, _, delta_z = self.compare_translation(T_base_human, T_base_ee)
+                self.filtered_delta_z = self.apply_low_pass_filter(delta_z, self.filtered_delta_z, self.z_smoothing_factor)
+                print("Δz (filtered): ", self.filtered_delta_z)
+
+                if abs(self.filtered_delta_z) < self.z_threshold:
+                    print("Z is close enough")
+                    self.z_done_1 = True
+                    break
+
+        # Final stabilization after Y and Z are done
+        if self.y_done_1 and self.z_done_1 and not self.done_1:
+            for _ in range(20):
+                self.send_arm_command({"joint_lift": self.current_joint_lift})
+            self.done_1 = True
+
+        if self.done_1:
+            for _ in range(20):
+                self.send_arm_command({"joint_lift": 0.7})
+            
+            for _ in range(20):
+                self.send_base_command(linear_x=0.2, angular_z=0.0)
+            
+            for _ in range(20):
+                self.send_base_command(linear_x=0.0, angular_z=0.0)
+
+            if not self.y_done_2:
+                # Efficient joint adjustment loop
+                joint_levels = {
+                    "joint_arm_l0": [0.5, 1.0, 1.5, 2.0],
+                    "joint_arm_l1": [0.5, 1.0, 1.5, 2.0],
+                    "joint_arm_l2": [0.5, 1.0, 1.5, 2.0],
+                    "joint_arm_l3": [0.5, 1.0, 1.5, 2.0],
+                }
+
+                for joint, levels in joint_levels.items():
+                    if self.y_done_2:
+                        break
+                    
+                    for level in levels:
+                        for _ in range(10):
+                            print(f"Adjusting {joint} to {level}")
+                            self.send_arm_command({
+                                joint: level,
+                                "joint_lift": 0.5,
+                                "joint_wrist_yaw": -0.0
+                            })
+
+                        # Recalculate the filtered delta_y
+                        _, delta_y, _ = self.compare_translation(T_base_human, T_base_ee)
+                        self.filtered_delta_y = self.apply_low_pass_filter(delta_y, self.filtered_delta_y, self.y_smoothing_factor)
+                        print("Δy (filtered): ", self.filtered_delta_y)
+
+                        if abs(self.filtered_delta_y) < self.y_threshold:
+                            print("Y is close enough")
+                            self.y_done_2 = True
+                            break
+
+            # Handle Z movement after Y is done
+            if self.y_done_2 and not self.z_done_2:
+
+                for level in [0.4, 0.3, 0.2]:
+                    for _ in range(10):
+                        print(f"Adjusting joint_lift to {level}")
+                        self.send_arm_command({"joint_lift": level})
+
+                    # Recalculate the filtered delta_z
+                    _, _, delta_z = self.compare_translation(T_base_human, T_base_ee)
+                    self.filtered_delta_z = self.apply_low_pass_filter(delta_z, self.filtered_delta_z, self.z_smoothing_factor)
+                    print("Δz (filtered): ", self.filtered_delta_z)
+
+                    if abs(self.filtered_delta_z) < self.z_threshold:
+                        print("Z is close enough")
+                        self.z_done_2 = True
+                        break
+
+            # Final stabilization after Y and Z are done
+            if self.y_done_2 and self.z_done_2 and not self.done_2:
+                for _ in range(20):
+                    self.send_arm_command({"joint_lift": self.current_joint_lift})
+                self.done_2 = True
+                # breakpoint()
+
         
         rospy.spin()
 
